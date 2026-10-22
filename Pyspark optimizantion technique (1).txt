@@ -1,0 +1,441 @@
+PySpark Optimization technique:
+	https://www.toptal.com/spark/apache-spark-optimization-techniques
+	
+	Optimization techniques in PySpark are strategies used to improve the performance, efficiency,
+and scalability of Spark applications. Since PySpark deals with distributed computing, optimizing 
+how data is processed, stored, and retrieved can significantly reduce execution time and resource 
+usage.
+
+Why Optimization is require in Spark:-
+	Optimization techniques in PySpark are essential to ensure efficient execution of big data 
+processing tasks. Without optimization, Spark applications can suffer from slow performance, 
+excessive memory consumption, and costly resource utilization. Here’s why optimization is crucial:
+1. Improve Performance and Speed -
+	1)PySpark operates on distributed clusters, and poor optimization can cause bottlenecks.
+	2)Optimized queries execute faster and reduce processing time.
+	Example: Using broadcast joins avoids expensive shuffling.
+
+2. Reduce Memory and CPU Usage -
+	1)Large datasets can overwhelm system resources.
+	2)Techniques like caching and persisting prevent recomputation, saving memory.
+	Example: Avoiding collect() minimizes driver memory overload.
+
+3. Handle Large-Scale Data Efficiently -
+	1)Big data requires parallel processing across multiple nodes.
+	2)Partitioning and filter pushdown help reduce unnecessary data scans.
+	Example: Using repartition() ensures balanced workload distribution.
+
+4. Minimize Disk I/O and Network Overhead -
+	1)Excessive shuffle operations increase network traffic and disk reads.
+	2)Vectorized UDFs and columnar operations optimize data processing.
+	Example: Storing data in Parquet format reduces I/O costs compared to CSV.
+
+5. Ensure Cost Efficiency in Cloud Computing -
+	1)In cloud environments, computing resources are billed based on usage.
+	2)Optimized Spark applications reduce unnecessary computation, cutting costs.
+	Example: Adaptive Query Execution (AQE) dynamically improves query plans.
+Without optimization, PySpark applications can become sluggish, expensive, and inefficient.
+
+Optimization technique in PySaprk:-
+
+ ------------------------- Columnar Processing ---------------------------------------
+1. Using Columnar Processing Instead of Row-Based Operations:- 
+		Columnar Processing vs. Row-Based Operations in PySpark
+	Columnar processing is more efficient than row-based operations because:
+	1)Better CPU efficiency: Spark processes entire columns instead of individual rows.
+	2)Optimized storage: Columnar formats like Parquet enable better compression.
+	3)Vectorized execution: Operations on entire columns are much faster than iterating over rows.
+	Example: Row-Based vs. Columnar Processing
+	Let's compare row-based operations with efficient columnar processing.
+	************************ Row-Based Approach ****************************** 
+	1)Row-Based Approach (Inefficient)
+	Using Python functions on each row leads to slow performance.
+	
+		PySpark DataFrames operate on columns rather than individual rows, leading to efficient
+	execution compared to RDDs.
+	
+	from pyspark.sql.functions import col
+	ex:-
+	df = df.withColumn("new_value", col("existing_value") * 2)  # Column-wise operation
+	from pyspark.sql import SparkSession
+	spark = SparkSession.builder.appName("RowBased").getOrCreate()
+	df = spark.createDataFrame([(1, 10), (2, 20), (3, 30)], ["id", "value"])
+
+	# Applying inefficient row-based operation
+	def process_row(row):
+		return row.value * 2
+
+	processed_data = [process_row(row) for row in df.collect()]  # Brings data to driver
+	print(processed_data)  # Not scalable!
+	
+	Why is this bad?
+	1) Brings data to the driver, causing memory bottlenecks.
+	2) Does not utilize Spark parallelism, making it slow on large datasets.
+	
+	************************ Columnar Processing Approach ****************************** 
+	Columnar Processing (Efficient)
+	Using PySpark's built-in column operations is much faster.
+	from pyspark.sql.functions import col
+	df = df.withColumn("new_value", col("value") * 2)  # Vectorized operation
+	df.show()
+	Why is this better?
+	1) Uses Spark’s Catalyst optimizer for efficient execution.
+	2) Operates on entire columns, reducing memory overhead.
+	3) Avoids costly collect() operations
+
+------------------------- Predicate Pushdown ---------------------------------------
+2. Using Predicate Pushdown for Query Optimization
+		Predicate Pushdown is an optimization technique where filtering conditions are applied at the 
+	data source level rather than after loading the data into memory. This reduces the amount of 
+	data Spark reads, improving performance by minimizing I/O operations.
+	How Predicate Pushdown Works :-
+	1)When reading from Parquet, ORC, or databases, Spark pushes filters down to the source.
+	2)The Catalyst Optimizer ensures that only relevant rows are fetched.
+	3)Reduces memory usage by avoiding unnecessary data loading.
+	ex:-
+	from pyspark.sql import SparkSession
+	df_csv = spark.read.parquet("predeicted_push_down.csv")
+
+	# Applying filter (Pushdown happens here)
+	filtered_df = df_csv.filter(col("country") == "India")
+	filtered_df.show()
+	
+	## Why is this efficient?
+	1)Spark only loads rows where country = 'India' instead of scanning the entire dataset.
+	2)Reduces I/O operations, making queries faster.
+	
+	Check Query Execution Plan -
+	#To verify Predicate Pushdown, inspect the physical plan.
+	filtered_df.explain(True)
+
+------------------------- Cache and persist  ---------------------------------------
+
+3. Caching and Persisting Data
+		Caching and persisting are optimization techniques in PySpark that store intermediate results to avoid recomputation, improving performance and reducing execution time.
+	************ Cache *************************
+	1. What is Caching - Stores DataFrame in memory for quick access.
+	2. Lazy evaluation: Data is cached only when an action (like .count()) is triggered.
+	3. Best for frequently accessed data that fits in memory.
+	Examaple:- 
+			from pyspark.sql import SparkSession
+			data = [(1, "Alice", 25), (2, "Bob", 30), (3, "Charlie", 35)]
+			df = spark.createDataFrame(data, ["id", "name", "age"])
+			df.cache()  # Stores DataFrame in memory
+			df.count()  # First action triggers caching
+			df.show()   # Faster execution since data is cached
+			
+	************ Persist *************************
+	1. More flexible than caching: Allows storing data in memory, disk, or both.
+	2. Different storage levels:
+		MEMORY_ONLY: Stores in RAM (similar to cache).
+		MEMORY_AND_DISK: Stores in RAM, spills to disk if needed.
+		DISK_ONLY: Stores only on disk.
+		MEMORY_AND_DISK_SER: Serialized storage (reduces memory usage).
+		OFF_HEAP: Stores outside JVM heap.
+		from pyspark.storagelevel import StorageLevel
+		Examaple:- 
+			df.persist(StorageLevel.MEMORY_AND_DISK)  # Stores in memory & disk
+			df.count()  # First action triggers persistence
+			df.show()   # Faster execution since data is persisted
+		----------- diffrenece --------
+		Feature	           Cache	         		Persist
+		Storage	         Memory only	   		 Memory, Disk, Serialized
+		Flexibility	     Limited	        	 Multiple storage levels
+		Performance	     Fast 					     Slower 
+						(if fits in memory)		 (if spills to disk)
+		Use Case		Small datasets				Large datasets
+		
+		Best Choice:
+		1) Use cache() for small datasets that fit in memory.
+		2) Use persist() for large datasets that may need disk storage.
+		Caching and persisting boost PySpark performance by avoiding redundant computations.
+
+------------------------- Broadcast Join  ---------------------------------------		
+4. Optimizing Join Operations with Broadcast Join
+		Joining two datasets is a common operation in PySpark, but it can be expensive if not 
+	optimized properly. Broadcast join is an optimization technique that helps speed up joins when
+	one of the datasets is small.
+	
+	--------- Normal Join -------------------
+	1. What Happens in a Normal Join?
+	In a normal join, Spark distributes both datasets across multiple nodes. 
+	Since the data is spread out, Spark needs to shuffle records to ensure that matching keys are
+	placed together for the join operation.
+	Problems with Normal Join:
+	1) Expensive shuffle operations: Data is moved across nodes, increasing network traffic.
+	2) Slow execution: Large datasets take longer to process.
+	3) High memory usage: Requires significant resources.
+	Issue: Spark shuffles data across nodes, making the join slow.
+	
+	Example:-
+	from pyspark.sql import SparkSession
+	# Creating large and small DataFrames
+	large_df = spark.read.csv(filepath)
+	small_df = spark.read.csv(filepath)
+	# Performing a normal join (causes shuffle)
+	joined_df = large_df.join(small_df, "id")
+	joined_df.explain(True)  # Shows shuffle in execution plan
+	
+	--------- Broadcast Join -------------------
+	In a broadcast join, Spark sends the smaller dataset to all worker nodes, eliminating the need
+	for shuffling. This significantly improves performance.
+	Advantages of Broadcast Join:
+	1)No shuffle: The smaller dataset is available on all nodes.
+	2)Faster execution: Reduces network overhead.
+	3)Efficient memory usage: Works well when the small dataset fits in memory.
+	Examaple:-
+	from pyspark.sql.functions import broadcast
+	# Using broadcast join
+	broadcast_df = broadcast(small_df)
+	joined_df = large_df.join(broadcast_df, "id")
+	joined_df.explain(True)  # No shuffle in execution plan
+	
+	When to Use Broadcast Join?
+	1)When one dataset is significantly smaller than the other.
+	2)When shuffle operations slow down performance.
+	3)When the small dataset fits in memory.
+	
+	Comparison Table -
+	Feature					Normal Join			Broadcast Join
+	Shuffle Required?			✅ Yes				❌ No
+	Speed						🚶 Slow				🚀 Fast
+	Memory Usage				🔥 High				🧊 Low
+	Best for				Large datasets		Small datasets
+
+------------------------- Avoiding Expensive collect() and show()  ---------------------------------------
+5. Avoiding Expensive collect() and show() Operations
+		In PySpark, operations like .collect() and .show() can be costly when dealing with large 
+	datasets. These functions bring data to the driver, which can cause memory bottlenecks and slow
+	down performance.
+	** Why collect() is Expensive?
+		1) .collect() retrieves all data from worker nodes to the driver.
+		2) If the dataset is too large, the driver runs out of memory and crashes.
+		3) Network overhead increases as all partitions send data to the driver.
+	Examaple -
+	df = spark.read.parquet("people.csv")
+	data = df.collect()  # 🚫 Avoid this for large datasets!
+	print(data)
+	
+	#Issue: If large_data.parquet contains millions of rows, the driver cannot handle the load.
+	
+	# Better Alternative: Use .take() or .limit() -
+	sample_data = df.limit(10).collect()  # ✅ Safer approach
+	print(sample_data)
+
+	** Why show() is Expensive?
+		1) .show() displays all rows in the console.
+		2) If no limit is set, it tries to print the entire dataset, causing performance issues.
+	Examaple -
+	df = spark.read.parquet("people.csv")
+	df.show()  # 🚫 Avoid this for large datasets!
+	
+	# Issue: If the dataset has millions of rows, printing everything slows down execution.
+	Better Alternative: Use .show(n)
+	df.show(10)
+
+------------------------- Data Partitioning (repartition & coalesce)  ---------------------------------------
+6.Data Partitioning (repartition & coalesce)  	
+	Partitioning is a crucial optimization technique in PySpark that helps distribute data 
+	across multiple nodes for parallel processing. The two main functions used for partitioning are
+	repartition() and coalesce(), but they serve different purposes.
+	** What is Partitioning?
+	1)Partitions are chunks of data that Spark processes in parallel.
+	2)More partitions → Better parallelism but higher overhead.
+	3)Fewer partitions → Less overhead but possible data skew.
+	
+	###  Difference Between repartition() and coalesce() ###
+	Feature					repartition()								coalesce()
+	Purpose			Increases or decreases partitions			Only decreases partitions
+	Shuffle			✅ Full shuffle (expensive)					❌ Minimizes shuffle
+	Performance		Slower due to data movement	Faster, 		avoids unnecessary data movement
+	Use Case		When increasing partitions 					When reducing partitions efficiently
+					or balancing load
+
+	# Use repartition()- when you need more partitions or balanced distribution. 
+	# Use coalesce()- when you need fewer partitions without excessive shuffling.
+	Example:-
+		df = spark.read.parquet("people.csv")
+		print(f"Initial partitions: {df.rdd.getNumPartitions()}")
+		df_repartitioned = df.repartition(50)  # Increase partitions to 50
+		print(f"Repartitioned partitions: {df_repartitioned.rdd.getNumPartitions()}")
+		
+		# Effect: Redistributes data across 50 partitions, ensuring balanced load.
+		# Downside: Causes full shuffle, which can be expensive.
+		
+		df_coalesced = df.coalesce(5)  # Reduce partitions to 5
+		print(f"Coalesced partitions: {df_coalesced.rdd.getNumPartitions()}")
+		
+		# Effect: Reduces partitions without full shuffle, making it efficient.
+		# Downside: May lead to uneven partition sizes
+		
+		Checking Partition Distribution :-
+		df_repartitioned.explain(True)  # Shows shuffle in execution plan
+		df_coalesced.explain(True)  # Shows minimized shuffle
+		# repartition() will show shuffle operations in the execution plan. 
+		# coalesce() will show minimal data movement.
+		
+		### When to Use Each?
+		Use repartition() when:
+			1) You need more partitions for parallelism.
+			2) You want balanced partition sizes.
+			3) You are reading large datasets from multiple sources.
+
+		Use coalesce() when:
+			1) You need fewer partitions for efficiency.
+			2) You want to avoid unnecessary shuffling.
+			3) You are writing data to disk and want fewer output files.
+
+------------------------- Shared Varible  ---------------------------------------
+7.Shared Varible
+		Shared variables in PySpark help optimize distributed computations by reducing network 
+	overhead and improving performance. PySpark provides two types of shared variables:
+	1.Broadcast Variables – Used for efficiently sharing read-only data across nodes.
+	2.Accumulator Variables – Used for aggregating values across tasks.
+	
+	1. Broadcast Variables
+			Broadcast variables allow efficient distribution of read-only data across all nodes in
+	a Spark cluster. Instead of sending the same data multiple times with each task, Spark broadcasts
+	the data once.
+	Why Use Broadcast Variables?
+		✅ Avoids redundant data transfer 
+		✅ Reduces network overhead 
+		✅ Improves performance for joins and lookups
+	Example:-
+			from pyspark.sql import SparkSession
+			# Creating a lookup dictionary
+			lookup_dict = {"Alice": 1, "Bob": 2, "Charlie": 3}
+			# Broadcasting the dictionary
+			broadcast_dict = spark.sparkContext.broadcast(lookup_dict)
+			# Using broadcast variable in an RDD operation
+			data = [("Alice", 25), ("Bob", 30)]
+			rdd = spark.sparkContext.parallelize(data)
+			result = rdd.map(lambda x: (x[0], x[1], broadcast_dict.value[x[0]])).collect()
+			print(result)  # Output: [('Alice', 25, 1), ('Bob', 30, 2)]
+
+	2. Accumulator Variables
+			Accumulators are used for aggregating values across tasks in a distributed environment.
+	They are commonly used for counting events or tracking metrics.
+	Why Use Accumulators?
+		✅ Efficient aggregation across nodes 
+		✅ Reduces communication overhead 
+		✅ Useful for logging and debugging
+	Example :-
+			# Creating an accumulator
+			accum = spark.sparkContext.accumulator(0)
+			# Using accumulator in an RDD operation
+			data = [1, 2, 3, 4, 5]
+			rdd = spark.sparkContext.parallelize(data)
+			def count_even(num):
+				if num % 2 == 0:
+					accum.add(1)
+			rdd.foreach(count_even)
+			print(f"Total even numbers: {accum.value}")
+			
+------------------- Adaptive Query Execution (AQE) ------------------- 
+8.Adaptive Query Execution (AQE)
+		Adaptive Query Execution (AQE) is a powerful optimization feature introduced in Spark 3.0
+	that dynamically adjusts query plans at runtime based on actual data statistics. Unlike 
+	traditional query execution, which relies on static planning, AQE re-optimizes queries to 
+	improve performance.
+	# Why AQE is Important?
+		✅ Handles Data Skew – Adjusts partition sizes dynamically.
+		✅ Optimizes Join Strategies – Switches between shuffle join and broadcast join based on data size.
+		✅ Reduces Shuffle Operations – Coalesces partitions to minimize unnecessary data movement.
+		✅ Improves Query Performance – Adapts execution plans based on real-time statistics.
+	
+	# Enabling AQE in PySpark -
+			from pyspark.sql import SparkSession
+			spark = SparkSession.builder.appName("AQEExample").getOrCreate()
+			# Enable AQE
+			spark.conf.set("spark.sql.adaptive.enabled", True)
+			
+	# Perform a Normal Join (Without AQE)
+			large_df = spark.read.csv(filepath)
+			small_df = spark.read.csv(filepath)
+			# Performing a normal join (causes shuffle)
+			joined_df = large_df.join(small_df, "id")
+			joined_df.explain(True)  # Check shuffle operations
+	# Enable AQE and Optimize Join
+			spark.conf.set("spark.sql.adaptive.enabled", True)
+			large_df = spark.read.csv(filepath)
+			small_df = spark.read.csv(filepath)
+			# Performing a normal join (causes shuffle)
+			joined_df = large_df.join(small_df, "id")
+			joined_df.explain(True)
+			
+	✅ Effect: AQE detects small DataFrame and switches to broadcast join, improving performance.
+	
+	** Key AQE Features :-
+		Feature										Benefit
+		Dynamic Join Optimization			Switches between shuffle join and broadcast join
+		Coalescing Partitions	            Reduces shuffle overhead
+		Handling Data Skew	                Adjusts partition sizes dynamically
+		Optimized Query Execution	        Improves performance based on runtime statistics
+
+------------------- Using Vectorized Pandas UDFs-------------------
+9. Using Vectorized Pandas UDFs
+		Vectorized Pandas UDFs in PySpark provide a significant performance boost over traditional 
+	row-based UDFs by leveraging Apache Arrow for efficient data transfer and vectorized operations.
+	
+	# What are PySpark UDFs?
+		1) User-Defined Functions (UDFs) allow users to apply custom logic to PySpark DataFrames.
+		2) Standard UDFs operate row-by-row, causing high serialization overhead.
+		3) They are slow because each row is processed individually.
+		
+	# Example :-
+			from pyspark.sql.functions import udf
+			from pyspark.sql.types import DoubleType
+			
+			# Standard UDF for Temperature Conversion
+			def fahrenheit_to_celsius(temp_f):
+				return (temp_f - 32) * (5 / 9)
+			# Register UDF
+			convert_udf = udf(fahrenheit_to_celsius, DoubleType())
+
+			# Apply UDF (Row-by-Row Processing)
+			df_udf = df.withColumn("temp_c", convert_udf(df["temp_f"]))
+			df_udf.show()
+
+	
+	# Issue: Each row is processed individually, leading to slow execution.
+	
+	# What are Vectorized Pandas UDFs?
+		1) Pandas UDFs operate on entire columns instead of individual rows.
+		2) They use Apache Arrow for efficient data transfer between Spark and Pandas.
+		3) Much faster than standard UDFs due to vectorized execution.
+	# Example:-
+			# Pandas UDF for Temperature Conversion (Vectorized)
+			@pandas_udf("double")
+			def fahrenheit_to_celsius_pandas(temp_series: pd.Series) -> pd.Series:
+				return (temp_series - 32) * (5 / 9)
+
+			# Apply Pandas UDF (Column-wise Processing)
+			df_pandas_udf = df.withColumn("temp_c", fahrenheit_to_celsius_pandas(df["temp_f"]))
+			df_pandas_udf.show()
+
+	
+------------------- Optimal File Formats-------------------	
+10. Choosing Optimal File Formats
+		Selecting the right file format in PySpark is crucial for performance, storage efficiency,
+	and query optimization. Different formats impact read/write speed, compression, schema evolution,
+	and compatibility.
+	
+	# Why File Formats Matter in PySpark?
+			✅ Improved Read/Write Efficiency – Faster serialization and deserialization. 
+			✅ Enhanced Compression – Reduces storage costs and speeds up I/O operations. 
+			✅ Schema Management – Handles schema changes and metadata efficiently.
+			✅ Query Optimization – Supports predicate pushdown and columnar storage for faster queries.
+	
+	# Common File Formats in PySpark -
+		File 		Format	Type		Best Use Case						Advantages												Disadvantages
+		Parquet		Columnar		Big data analytics						High compression, fast queries, schema evolution	Not ideal for streaming
+		ORC			Columnar		Data warehouses	Efficient indexing,	 	predicate pushdown									Larger file sizes
+		Avro		Row-based		Data interchange						Schema evolution, compact format					Slower queries
+		CSV			Row-based		Simple data storage						Human-readable, easy to use							No compression,slow queries
+		JSON		Row-based		Web applications						Flexible, widely used								High storage overhead
+
+
+
+
+
+
